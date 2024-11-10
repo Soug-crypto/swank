@@ -18,7 +18,7 @@ def save_client(name, contact):
         st.error("Client name and contact information are required.")
         return False
     st.session_state.clients[name] = contact
-    st.success(f"Client '{name}' saved.")
+    st.success(f"Client '{name}' saved.", icon="✅")
     return True
 
 def get_client_info(name):
@@ -50,14 +50,14 @@ def add_product(description, quantity, unit_price, sub_items=None):
         "Sub-items": sub_items if sub_items else []
     }
     st.session_state.products.append(new_product)
-    st.success("Product added.")
+    st.success("Product added.", icon="✅")
     return True
 
 def delete_product(index):
     """Deletes a product from the invoice."""
     if 0 <= index < len(st.session_state.products):
         del st.session_state.products[index]
-        st.success("Product deleted.")
+        st.success("Product deleted.", icon="❌")
     else:
         st.error("Invalid product index.")
 
@@ -70,7 +70,7 @@ def update_product(index, description, quantity, unit_price, sub_items):
         product["Unit Price"] = unit_price
         product["Total"] = quantity * unit_price
         product["Sub-items"] = sub_items
-        st.success("Product updated.")
+        st.success("Product updated.", icon="🔄")
     else:
         st.error("Invalid product index.")
 
@@ -92,8 +92,9 @@ def display_invoice_customization():
 def display_client_information():
     """Sidebar for managing client information."""
     st.sidebar.header("Client Information")
-    client_name = st.sidebar.text_input("Client Name")
-    client_contact = st.sidebar.text_input("Client Contact Info")
+    client_name = st.sidebar.text_input("Client Name", "")
+    client_contact = st.sidebar.text_input("Client Contact Info", "")
+    
     if st.sidebar.button("Save Client"):
         save_client(client_name, client_contact)
 
@@ -101,7 +102,8 @@ def display_client_information():
         selected_client = st.sidebar.selectbox("Select Existing Client", [""] + get_client_names())
         if selected_client:
             client_name, client_contact = selected_client, get_client_info(selected_client)
-            st.sidebar.write(f"Loaded client info: {client_name}, {client_contact}")
+            st.sidebar.write(f"Loaded client info: **{client_name}**, **{client_contact}**")
+
     return client_name, client_contact
 
 def display_and_manage_existing_products():
@@ -110,7 +112,7 @@ def display_and_manage_existing_products():
 
     if st.session_state.products:
         for i, product in enumerate(st.session_state.products):
-            st.write(f"**Product {i + 1}:**")
+            st.write(f"### Product {i + 1}")
             col1, col2 = st.columns(2)
             with col1:
                 new_description = st.text_input(f"Description {i + 1}", product["Description"], key=f"desc_{i}")
@@ -180,7 +182,7 @@ def display_and_manage_products():
                 if not filtered_product.empty:
                     product_data = filtered_product.iloc[0].to_dict()
                     add_product(description, quantity, product_data.get('price', 0), product_data.get("Sub-items", []))
-                    st.success("Product added from stock.")
+                    st.success("Product added from stock.", icon="✅")
                 else:
                     st.warning("No matching product found in stock.")
 
@@ -236,17 +238,19 @@ def generate_and_download_pdf(invoice_id, company_name, logo_path, invoice_date,
         with open(temp_logo_path, "wb") as f:
             f.write(logo_path.getbuffer())
 
-    pdf_file = generate_pdf(
-        invoice_id, company_name, temp_logo_path, invoice_date, due_date,
-        client_name, client_contact, products, subtotal, discount_amount, total
-    )
-
-    if temp_logo_path and os.path.exists(temp_logo_path):  # Cleanup
-        os.remove(temp_logo_path)
-
-    with open(pdf_file, "rb") as file:
-        st.download_button("Download Invoice PDF", data=file, file_name=pdf_file, mime="application/pdf")
-    st.success("PDF generated and ready to download.")
+    try:
+        pdf_file = generate_pdf(
+            invoice_id, company_name, temp_logo_path, invoice_date, due_date,
+            client_name, client_contact, products, subtotal, discount_amount, total
+        )
+        with open(pdf_file, "rb") as file:
+            st.download_button("Download Invoice PDF", data=file, file_name=pdf_file, mime="application/pdf")
+        st.success("PDF generated and ready to download.", icon="✅")
+    except Exception as e:
+        st.error(f"Error generating PDF: {str(e)}", icon="⚠️")
+    finally:
+        if temp_logo_path and os.path.exists(temp_logo_path):  # Cleanup
+            os.remove(temp_logo_path)
 
 # --- Main Streamlit App ---
 def main():
@@ -265,8 +269,7 @@ def main():
 
     if page == "Products":
         display_and_manage_products()
-        # subtotal = calculate_subtotal()  # Calculate subtotal after managing products
-        # discount_amount, total = display_discount_section(subtotal) # Calculate discount and total after managing products
+        subtotal = calculate_subtotal()  # Calculate subtotal after managing products
     elif page == "Discounts":
         subtotal = calculate_subtotal()
         discount_amount, total = display_discount_section(subtotal)
