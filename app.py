@@ -97,7 +97,7 @@ def calculate_subtotal():
 def display_invoice_customization():
     """Sidebar for invoice customization options."""
     st.sidebar.header("Invoice Customization")
-    company_name = st.sidebar.text_input("Company Name", "Your Company Name")
+    company_name = st.sidebar.text_input("Company Name", "Arkan Limited")
     company_logo = st.sidebar.file_uploader("Upload Logo (optional)", type=["jpg", "jpeg", "png"])
     invoice_id = st.sidebar.text_input("Invoice ID", f"INV-{datetime.now().strftime('%Y%m%d%H%M')}")
     invoice_date = st.sidebar.date_input("Invoice Date", datetime.now().date())
@@ -214,35 +214,32 @@ def display_and_manage_products():
         with st.spinner("Processing stock data..."):
             combined_df = load_data(uploaded_file)
             if combined_df is None:
+                st.error("❌ Failed to load data. Please check the file format.")
                 return  # Stop if data loading fails
 
-    # Split layout for intuitive product management
-    col1, col2 = st.columns([2, 1], gap="large")
+    col1, col2 = st.columns([1, 2], gap="large")
 
-    # Left Column: Adding New Products
     with col1:
         st.subheader("🆕 Add New Product")
         add_method = st.radio("Add Method", ["Manually", "From Stock (Multi-Select)"], horizontal=True)
 
         if add_method == "Manually":
-            st.text_input("Description", key="manual_desc", placeholder="Enter product description...")
-            st.number_input("Quantity", min_value=1, key="manual_qty")
-            st.number_input("Unit Price ($)", min_value=0.0, key="manual_price")
-            st.text_area("Sub-items (Optional)", placeholder="List sub-items, one per line", key="manual_subitems")
+            description = st.text_input("Description", placeholder="Enter product description...")
+            quantity = st.number_input("Quantity", min_value=1)
+            unit_price = st.number_input("Unit Price ($)", min_value=0.0)
+            sub_items = st.text_area("Sub-items (Optional)", placeholder="List sub-items, one per line")
 
             if st.button("Add Product", type="primary"):
-                description = st.session_state.manual_desc
-                quantity = st.session_state.manual_qty
-                unit_price = st.session_state.manual_price
-                sub_items = st.session_state.manual_subitems.splitlines()
-                add_product(description, quantity, unit_price, sub_items)
-                st.success("🎉 Product added successfully!")
+                if description and quantity > 0 and unit_price >= 0:
+                    add_product(description, quantity, unit_price, sub_items.splitlines())
+                    st.success("🎉 Product added successfully!")
+                else:
+                    st.error("❌ Please fill in all fields correctly.")
 
         elif add_method == "From Stock (Multi-Select)":
             if combined_df is None or combined_df.empty:
                 st.warning("⚠️ Please upload stock data first.")
             else:
-                # Initialize filter states
                 filters = {}
                 columns = combined_df.columns.tolist()
 
@@ -251,65 +248,129 @@ def display_and_manage_products():
                     selected_values = st.multiselect(f"Filter by {col}", unique_values, default=["All"], key=f"filter_{col}")
                     filters[col] = selected_values
 
-                # Apply filters
+                # Clear Filters Button
+                if st.button("Clear Filters"):
+                    for col in columns:
+                        st.session_state[f"filter_{col}"] = ["All"]
+
                 filtered_product = apply_filters(combined_df, filters)
 
-                # Display filtered data
                 if not filtered_product.empty:
                     st.subheader("Filtered Products")
-                    product_options = filtered_product['description'].tolist()  # Assuming 'description' is a column
+                    product_options = filtered_product['description'].tolist()
                     selected_product = st.selectbox("Select a Product", product_options)
 
                     if selected_product:
                         product_info = filtered_product[filtered_product['description'] == selected_product].iloc[0]
-                        st.text_input("Description", value=product_info['description'], disabled=True, key="stock_desc")
-                        st.number_input("Quantity", min_value=1, key="stock_qty")
+                        st.text_input("Description", value=product_info['description'], disabled=True)
+                        stock_qty = st.number_input("Quantity", min_value=1)
 
                         if st.button("Add Product from Stock", type="primary"):
-                            add_product(product_info['description'], st.session_state.stock_qty, product_info.get('price', 0), product_info.get("Sub-items", []))
+                            add_product(product_info['description'], stock_qty, product_info.get('price', 0), product_info.get("Sub-items", []))
                             st.success("✅ Product added from stock.")
-
                 else:
                     st.warning("No products match the current filters.")
 
-    # Right Column: Product and Invoice Summary
     with col2:
         st.subheader("📃 Invoice Summary")
         products = st.session_state.get("products", [])
         subtotal = calculate_subtotal()
 
         if products:
-            st.table(products)
+            for idx, product in enumerate(products):
+                col1, col2 = st.columns([4, 1])
+                col1.write(f"{product['Description']} (Qty: {product['Quantity']}, Price: ${product['Unit Price']:.2f})")
+                if col2.button("Edit", key=f"edit_{idx}"):
+                    edit_product(idx)  # Function to edit the product
+                if col2.button("Delete", key=f"delete_{idx}"):
+                    delete_product(idx)  # Function to delete the product
+            
             st.metric("Subtotal", f"${subtotal:.2f}")
         else:
             st.info("No products added yet. Start adding products.")
 
     return products, subtotal
 
-def display_discount_section(subtotal):
-    """Section for applying discounts (percentage or amount)."""
-    st.header("Discount")
-    discount_type = st.radio("Discount Type", ["Percentage", "Amount"])
+def edit_product(index):
+    """Function to edit the selected product."""
+    if 'products' not in st.session_state or index >= len(st.session_state.products):
+        st.error("❌ Product not found.")
+        return
 
-    discount_amount = 0
-    discount_percentage = 0
+    product = st.session_state.products[index]
 
-    if subtotal == 0:
-        st.warning("Subtotal is zero. Discounts cannot be applied.")
-    else:
-        if discount_type == "Percentage":
-            discount_percentage = st.number_input("Discount (%)", min_value=0.0, max_value=100.0, value=0.0)
-            discount_amount = (discount_percentage / 100) * subtotal
-        else:  # discount_type == "Amount"
-            discount_amount = st.number_input("Discount Amount", min_value=0.0, value=0.0)
-            discount_percentage = (discount_amount / subtotal) * 100 if subtotal > 0 else 0
+    # Input fields for editing product details
+    new_description = st.text_input("Edit Description", value=product.get('Description', ''))
+    new_quantity = st.number_input("Edit Quantity", value=product.get('Quantity', 1), min_value=1)
+    new_price = st.number_input("Edit Unit Price ($)", value=product.get('Unit Price', 0.0), min_value=0.0)
 
-    total = subtotal - discount_amount  # Calculate total once
-    st.write(f"**Discount Type:** {discount_type}")
-    st.write(f"**Discount Percentage:** {discount_percentage:.2f}%")
-    st.write(f"**Discount Amount:** ${discount_amount:.2f}")
-    st.write(f"**Total:** ${total:.2f}")
-    return discount_amount, total
+    # Edit Sub-items
+    sub_items = product.get('Sub-items', [])
+    new_sub_items = []
+    for i, sub_item in enumerate(sub_items):
+        new_sub_item = st.text_input(f"Edit Sub-item {i + 1}", value=sub_item)
+        new_sub_items.append(new_sub_item)
+
+    # Button to add a new sub-item
+    if st.button("Add Sub-item"):
+        new_sub_items.append("")  # Add an empty field for the new sub-item
+
+    # Place the Update button here
+    if st.button("Update Product"):
+        # Update the product in the session state
+        st.session_state.products[index] = {
+            'Description': new_description,
+            'Quantity': new_quantity,
+            'Unit Price': new_price,  # Allow zero price
+            'Total': new_quantity * new_price,  # Recalculate total
+            'Sub-items': new_sub_items  # Update with new sub-items
+        }
+        st.success("✅ Product updated successfully!")
+
+def delete_product(index):
+    """Function to delete the selected product."""
+    del st.session_state.products[index]
+    st.success("✅ Product deleted successfully!")
+
+def edit_product(index):
+    """Function to edit the selected product."""
+    if 'products' not in st.session_state or index >= len(st.session_state.products):
+        st.error("❌ Product not found.")
+        return
+
+    product = st.session_state.products[index]
+    st.write("Editing product data:", product)  # Debugging output
+
+    # Ensure the unit price is a float
+    unit_price = float(product.get('Unit Price', 0.0))
+    
+    # Input fields for editing product details
+    new_description = st.text_input("Edit Description", value=product.get('Description', ''))
+    new_quantity = st.number_input("Edit Quantity", value=product.get('Quantity', 1), min_value=1)
+    new_price = st.number_input("Edit Unit Price ($)", value=unit_price, min_value=0.0)
+
+    # Edit Sub-items
+    sub_items = product.get('Sub-items', [])
+    new_sub_items = []
+    for i, sub_item in enumerate(sub_items):
+        new_sub_item = st.text_input(f"Edit Sub-item {i + 1}", value=sub_item)
+        new_sub_items.append(new_sub_item)
+
+    # Button to add a new sub-item
+    if st.button("Add Sub-item"):
+        new_sub_items.append("")  # Add an empty field for the new sub-item
+
+    # Update button
+    if st.button("Update Product"):
+        # Update the product in the session state
+        st.session_state.products[index] = {
+            'Description': new_description,
+            'Quantity': new_quantity,
+            'Unit Price': new_price,  # Allow zero price
+            'Total': new_quantity * new_price,  # Recalculate total
+            'Sub-items': new_sub_items  # Update with new sub-items
+        }
+        st.success("✅ Product updated successfully!")
 
 def generate_and_download_pdf(invoice_id, company_name, logo_path, invoice_date, due_date, client_name, client_contact, products, subtotal, discount_amount, total):
     """Generates and provides a download link for the PDF invoice."""
@@ -337,6 +398,33 @@ def generate_and_download_pdf(invoice_id, company_name, logo_path, invoice_date,
     finally:
         if temp_logo_path and os.path.exists(temp_logo_path):  # Cleanup
             os.remove(temp_logo_path)
+
+
+def display_discount_section(subtotal):
+    """Section for applying discounts (percentage or amount)."""
+    st.header("Discount")
+    discount_type = st.radio("Discount Type", ["Percentage", "Amount"])
+
+    # Initialize discount_amount and discount_percentage
+    discount_amount = 0
+    discount_percentage = 0
+
+    if subtotal == 0:
+        st.warning("Subtotal is zero. Discounts cannot be applied.")
+    else:
+        if discount_type == "Percentage":
+            discount_percentage = st.number_input("Discount (%)", min_value=0.0, max_value=100.0, value=0.0)
+            discount_amount = (discount_percentage / 100) * subtotal
+        else:  # discount_type == "Amount"
+            discount_amount = st.number_input("Discount Amount", min_value=0.0, value=0.0)
+            discount_percentage = (discount_amount / subtotal) * 100 if subtotal > 0 else 0
+
+    total = subtotal - discount_amount  # Calculate total once
+    st.write(f"**Discount Type:** {discount_type}")
+    st.write(f"**Discount Percentage:** {discount_percentage:.2f}%")
+    st.write(f"**Discount Amount:** ${discount_amount:.2f}")
+    st.write(f"**Total:** ${total:.2f}")
+    return discount_amount, total
 
 # --- Main Streamlit App ---
 def main():
