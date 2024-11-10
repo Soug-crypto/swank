@@ -265,8 +265,8 @@ def main():
 
     if page == "Products":
         display_and_manage_products()
-        subtotal = calculate_subtotal()  # Calculate subtotal after managing products
-        discount_amount, total = display_discount_section(subtotal) # Calculate discount and total after managing products
+        # subtotal = calculate_subtotal()  # Calculate subtotal after managing products
+        # discount_amount, total = display_discount_section(subtotal) # Calculate discount and total after managing products
     elif page == "Discounts":
         subtotal = calculate_subtotal()
         discount_amount, total = display_discount_section(subtotal)
