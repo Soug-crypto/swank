@@ -2,6 +2,8 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime
 import os
+from PIL import Image
+
 from utils.pdf_generator import generate_pdf
 from utils.data_handling import upload_and_process_stock_data
 
@@ -64,7 +66,6 @@ def add_product(description, quantity, unit_price, sub_items=None):
         st.session_state.products = []
 
     st.session_state.products.append(new_product)
-    st.success("Product added.", icon="✅")
     return True
 
 def calculate_subtotal():
@@ -73,14 +74,29 @@ def calculate_subtotal():
 
 # --- Streamlit Components/Sections ---
 def display_invoice_customization():
-    """Sidebar for invoice customization options."""
+    """Sidebar for invoice customization options with fallback to default logo."""
     st.sidebar.header("Invoice Customization")
+    
     company_name = st.sidebar.text_input("Company Name", "Arkan Limited")
-    company_logo = st.sidebar.file_uploader("Upload Logo (optional)", type=["jpg", "jpeg", "png"])
+    company_logo = st.sidebar.file_uploader("Upload Logo", type=["jpg", "jpeg", "png"])
+    
+    # Fallback to default logo if no file is uploaded
+    if not company_logo:
+        default_logo_path = os.path.join("assets", "logo.png")
+        if os.path.exists(default_logo_path):
+            company_logo = default_logo_path
+    
+    # Display the logo
+    if company_logo:
+        st.sidebar.image(Image.open(company_logo), caption="Company Logo", use_column_width=True)
+    
     invoice_id = st.sidebar.text_input("Invoice ID", f"INV-{datetime.now().strftime('%Y%m%d%H%M')}")
     invoice_date = st.sidebar.date_input("Invoice Date", datetime.now().date())
     due_date = st.sidebar.date_input("Due Date", datetime.now().date())
+    
     return company_name, company_logo, invoice_id, invoice_date, due_date
+
+
 
 def display_client_information():
     """Sidebar for managing client information."""
@@ -128,93 +144,105 @@ def apply_filters(df, filters):
 
 
 def display_and_manage_products():
-    """Manages product display, stock integration, and manual product entry with enhanced UI/UX."""
-    
+    """Manages the entire product display and management workflow."""
     st.title("📦 Product Management")
+    
+    # Sidebar for stock data
+    combined_df = display_sidebar()
+    
+    # Product entry section
+    col1, col2 = st.columns([1, 2], gap="large")
+    
+    with col1:
+        display_product_entry_section(combined_df)
+    
+    with col2:
+        display_invoice_summary()
+
+
+def display_sidebar():
+    """Handles stock data integration via file upload."""
     st.sidebar.header("Stock Data Integration")
     uploaded_file = st.sidebar.file_uploader("Upload Stock Data (CSV or Excel)", type=["csv", "xls", "xlsx"])
-    
-    combined_df = None
+
     if uploaded_file:
         with st.spinner("Processing stock data..."):
-            combined_df = load_data(uploaded_file)
-            if combined_df is None:
-                st.error("❌ Failed to load data. Please check the file format.")
-                return  # Stop if data loading fails
+            return load_data(uploaded_file)
+    
+    return None
 
-    col1, col2 = st.columns([1, 2], gap="large")
 
-    with col1:
-        st.subheader("🆕 Add New Product")
-        add_method = st.radio("Add Method", ["Manually", "From Stock (Multi-Select)"], horizontal=True)
+def display_product_entry_section(combined_df):
+    """Displays the interface for adding new products manually or from stock."""
+    st.subheader("🆕 Add New Product")
+    add_method = st.radio("Add Method", ["Manually", "From Stock (Multi-Select)"], horizontal=True)
 
-        if add_method == "Manually":
-            description = st.text_input("Description", placeholder="Enter product description...")
-            quantity = st.number_input("Quantity", min_value=1)
-            unit_price = st.number_input("Unit Price ($)", min_value=0.0)
-            sub_items = st.text_area("Sub-items (Optional)", placeholder="List sub-items, one per line")
+    if add_method == "Manually":
+        display_manual_product_entry()
+    elif add_method == "From Stock (Multi-Select)":
+        display_stock_product_entry(combined_df)
 
-            if st.button("Add Product", type="primary"):
-                if description and quantity > 0 and unit_price >= 0:
-                    add_product(description, quantity, unit_price, sub_items.splitlines())
-                    st.success("🎉 Product added successfully!")
-                else:
-                    st.error("❌ Please fill in all fields correctly.")
+def display_manual_product_entry():
+    """Handles manual product entry."""
+    description = st.text_input("Description", placeholder="Enter product description...")
+    quantity = st.number_input("Quantity", min_value=1)
+    unit_price = st.number_input("Unit Price ($)", min_value=0.0)
+    sub_items = st.text_area("Sub-items (Optional)", placeholder="List sub-items, one per line")
+    
+    if st.button("Add Product", type="primary"):
+        if add_product(description, quantity, unit_price, sub_items.splitlines()):
+            st.success("🎉 Product added successfully!")
 
-        elif add_method == "From Stock (Multi-Select)":
-            if combined_df is None or combined_df.empty:
-                st.warning("⚠️ Please upload stock data first.")
-            else:
-                filters = {}
-                columns = combined_df.columns.tolist()
 
-                for col in columns:
-                    unique_values = ["All"] + sorted(combined_df[col].astype(str).unique())
-                    selected_values = st.multiselect(f"Filter by {col}", unique_values, default=["All"], key=f"filter_{col}")
-                    filters[col] = selected_values
+def display_stock_product_entry(combined_df):
+    """Handles product entry from stock data with filtering options."""
+    if combined_df is None or combined_df.empty:
+        st.warning("⚠️ Please upload stock data first.")
+        return
+    
+    filters = {col: st.multiselect(f"Filter by {col}", ["All"] + sorted(combined_df[col].astype(str).unique()), default=["All"]) for col in combined_df.columns}
 
-                # Clear Filters Button
-                if st.button("Clear Filters"):
-                    for col in columns:
-                        st.session_state[f"filter_{col}"] = ["All"]
+    if st.button("Clear Filters"):
+        for col in filters.keys():
+            st.session_state[f"filter_{col}"] = ["All"]
 
-                filtered_product = apply_filters(combined_df, filters)
+    filtered_product = apply_filters(combined_df, filters)
 
-                if not filtered_product.empty:
-                    st.subheader("Filtered Products")
-                    product_options = filtered_product['description'].tolist()
-                    selected_product = st.selectbox("Select a Product", product_options)
+    if not filtered_product.empty:
+        st.subheader("Filtered Products")
+        product_options = filtered_product['description'].tolist()
+        selected_product = st.selectbox("Select a Product", product_options)
 
-                    if selected_product:
-                        product_info = filtered_product[filtered_product['description'] == selected_product].iloc[0]
-                        st.text_input("Description", value=product_info['description'], disabled=True)
-                        stock_qty = st.number_input("Quantity", min_value=1)
+        if selected_product:
+            product_info = filtered_product[filtered_product['description'] == selected_product].iloc[0]
+            st.text_input("Description", value=product_info['description'], disabled=True)
+            stock_qty = st.number_input("Quantity", min_value=1)
 
-                        if st.button("Add Product from Stock", type="primary"):
-                            add_product(product_info['description'], stock_qty, product_info.get('price', 0), product_info.get("Sub-items", []))
-                            st.success("✅ Product added from stock.")
-                else:
-                    st.warning("No products match the current filters.")
+            if st.button("Add Product from Stock", type="primary"):
+                add_product(product_info['description'], stock_qty, product_info.get('price', 0), product_info.get("Sub-items", []))
+                st.success("✅ Product added from stock.")
+    else:
+        st.warning("No products match the current filters.")
 
-    with col2:
-        st.subheader("📃 Invoice Summary")
-        products = st.session_state.get("products", [])
-        subtotal = calculate_subtotal()
+def display_invoice_summary():
+    """Displays the list of added products and the invoice summary."""
+    st.subheader("📃 Invoice Summary")
+    products = st.session_state.get("products", [])
+    subtotal = calculate_subtotal()
 
-        if products:
-            for idx, product in enumerate(products):
-                col1, col2 = st.columns([4, 1])
-                col1.write(f"{product['Description']} (Qty: {product['Quantity']}, Price: ${product['Unit Price']:.2f})")
-                if col2.button("Edit", key=f"edit_{idx}"):
-                    edit_product(idx)  # Function to edit the product
-                if col2.button("Delete", key=f"delete_{idx}"):
-                    delete_product(idx)  # Function to delete the product
-            
-            st.metric("Subtotal", f"${subtotal:.2f}")
-        else:
-            st.info("No products added yet. Start adding products.")
+    if products:
+        for idx, product in enumerate(products):
+            col1, col2 = st.columns([4, 1])
+            col1.write(f"{product['Description']} (Qty: {product['Quantity']}, Price: ${product['Unit Price']:.2f})")
+            if col2.button("Edit", key=f"edit_{idx}"):
+                edit_product(idx)
+            if col2.button("Delete", key=f"delete_{idx}"):
+                delete_product(idx)
 
-    return products, subtotal
+        st.metric("Subtotal", f"${subtotal:.2f}")
+    else:
+        st.info("No products added yet. Start adding products.")
+
 
 def delete_product(index):
     """Deletes a product from the invoice."""
@@ -287,32 +315,40 @@ def edit_product(index):
         st.success("✅ Product updated successfully!")
 
 
-
 def generate_and_download_pdf(invoice_id, company_name, logo_path, invoice_date, due_date, client_name, client_contact, products, subtotal, discount_amount, total):
     """Generates and provides a download link for the PDF invoice."""
     if not products:
         st.error("Please add at least one product before generating an invoice.")
         return
 
-    # Handle logo upload inside the PDF generation function
     temp_logo_path = None  # Initialize
-    if logo_path is not None:
-        temp_logo_path = f"temp_logo.{logo_path.type.split('/')[1]}"
-        with open(temp_logo_path, "wb") as f:
-            f.write(logo_path.getbuffer())
 
     try:
+        # Handle logo upload or default logo path
+        if logo_path is not None and hasattr(logo_path, 'type'):
+            temp_logo_path = f"temp_logo.{logo_path.type.split('/')[1]}"
+            with open(temp_logo_path, "wb") as f:
+                f.write(logo_path.getbuffer())
+        elif isinstance(logo_path, str) and os.path.exists(logo_path):
+            temp_logo_path = logo_path  # Use existing logo path if provided
+
+        # Generate PDF
         pdf_file = generate_pdf(
             invoice_id, company_name, temp_logo_path, invoice_date, due_date,
             client_name, client_contact, products, subtotal, discount_amount, total
         )
+
+        # Provide download link
         with open(pdf_file, "rb") as file:
             st.download_button("Download Invoice PDF", data=file, file_name=pdf_file, mime="application/pdf")
         st.success("PDF generated and ready to download.", icon="✅")
+
     except Exception as e:
         st.error(f"Error generating PDF: {str(e)}", icon="⚠️")
+
     finally:
-        if temp_logo_path and os.path.exists(temp_logo_path):  # Cleanup
+        # Cleanup temporary logo if applicable
+        if temp_logo_path and temp_logo_path.startswith("temp_logo") and os.path.exists(temp_logo_path):
             os.remove(temp_logo_path)
 
 
