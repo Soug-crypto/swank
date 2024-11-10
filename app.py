@@ -95,7 +95,6 @@ def display_invoice_customization():
 
 def display_client_information():
     """Section for managing client information."""
-    st.sidebar.header("Client Information")
     client_name = st.text_input("Client Name")
     client_contact = st.text_input("Client Contact Info")
     if st.button("Save Client"):
@@ -110,6 +109,33 @@ def display_client_information():
 
 
 
+
+
+def display_and_manage_existing_products():
+    """Displays, updates, and deletes existing products in the invoice."""
+    st.header("Invoice Products")
+
+    if st.session_state.products:
+        for i, product in enumerate(st.session_state.products):
+            st.write(f"**Product {i + 1}:**")
+            col1, col2 = st.columns(2)
+            with col1:
+                new_description = st.text_input(f"Description {i + 1}", product["Description"], key=f"desc_{i}")
+                new_quantity = st.number_input(f"Quantity {i + 1}", min_value=1, value=product["Quantity"], key=f"qty_{i}")
+                new_unit_price = st.number_input(f"Unit Price {i + 1}", min_value=0.0, value=product["Unit Price"], key=f"price_{i}")
+                sub_items_text = st.text_area(f"Sub-items {i + 1} (one per line)", "\n".join(product["Sub-items"]), key=f"subitems_{i}")
+                new_sub_items = [line.strip() for line in sub_items_text.splitlines() if line.strip()]
+            with col2:
+                if st.button(f"Update Product {i + 1}", key=f"update_{i}"):
+                    update_product(i, new_description, new_quantity, new_unit_price, new_sub_items)
+                if st.button(f"Delete Product {i + 1}", key=f"delete_{i}"):
+                    delete_product(i)
+            st.markdown("---")
+    else:
+        st.write("No products added yet.")
+
+
+
 def display_and_manage_products():
     """Manages product display, stock integration, and manual/dropdown product entry."""
 
@@ -117,8 +143,15 @@ def display_and_manage_products():
 
     display_and_manage_existing_products()
 
-    combined_df = upload_and_process_stock_data()
-    filter_and_display_stock_data(combined_df)
+    # --- Stock Data Upload (in sidebar) ---
+    st.sidebar.header("Stock Data")
+    uploaded_file = st.sidebar.file_uploader("Upload Stock Data (Excel)", type=["xlsx"])
+
+    if uploaded_file:
+        st.session_state['uploaded_stock_file'] = uploaded_file  # Store in session state
+        combined_df = upload_and_process_stock_data(uploaded_file)
+    else:
+        combined_df = None  # Reset if no file is uploaded
 
     st.header("Add New Product")
 
@@ -134,30 +167,35 @@ def display_and_manage_products():
         if st.button("Add Product"):
             add_product(description, quantity, unit_price, sub_items)
 
-    elif add_method == "From Stock (Dropdown)" and combined_df is not None:
-        if 'selected_product' not in st.session_state:
-            st.session_state.selected_product = {}
+    elif add_method == "From Stock (Dropdown)":
+        if combined_df is None:
+            st.warning("Please upload stock data first.")
+        else:
+            if 'selected_product' not in st.session_state:
+                st.session_state.selected_product = {}
 
-        for col in st.session_state['unique_values']:
-            if col != "description":
-                options = [''] + list(st.session_state['unique_values'][col])
-                st.session_state.selected_product[col] = st.selectbox(f"Select {col}:", options, key=f"product_dropdown_{col}")
+            if 'unique_values' in st.session_state:
+                for col in st.session_state['unique_values']:
+                    if col != "description":
+                        options = [''] + list(st.session_state['unique_values'][col])
+                        st.session_state.selected_product[col] = st.selectbox(f"Select {col}:", options, key=f"product_dropdown_{col}")
 
-        description = st.text_input("Description")
-        quantity = st.number_input("Quantity", value=1, min_value=1)
+            description = st.text_input("Description")
+            quantity = st.number_input("Quantity", value=1, min_value=1)
 
-        if st.button("Add Product from Stock"):
-            filtered_product = combined_df.copy()
-            for col, val in st.session_state.selected_product.items():
-                if val != '':
-                    filtered_product = filtered_product[filtered_product[col] == val]
+            if st.button("Add Product from Stock"):
+                filtered_product = combined_df.copy()
+                for col, val in st.session_state.selected_product.items():
+                    if val != '':
+                        filtered_product = filtered_product[filtered_product[col] == val]
 
-            if not filtered_product.empty:
-                product_data = filtered_product.iloc[0].to_dict()
-                add_product(description, quantity, product_data.get('price', 0), product_data.get("Sub-items", []))
-                st.success("Product added from stock.")
-            else:
-                st.warning("No matching product found in stock.")
+                if not filtered_product.empty:
+                    product_data = filtered_product.iloc[0].to_dict()
+                    add_product(description, quantity, product_data.get('price', 0), product_data.get("Sub-items", []))
+                    st.success("Product added from stock.")
+                else:
+                    st.warning("No matching product found in stock.")
+
 
     products = st.session_state.products
     subtotal = calculate_subtotal()
@@ -171,28 +209,6 @@ def display_and_manage_products():
         subtotal = 0
 
     return products, subtotal
-
-
-def display_and_manage_existing_products():
-    """Displays, updates, and deletes existing products in the invoice."""
-    st.header("Invoice Products")
-
-    if st.session_state.products:
-        for i, product in enumerate(st.session_state.products):
-            st.write(f"**Product {i + 1}:**")
-            col1, col2 = st.columns(2)
-            with col1:
-                new_description = st.text_input(f"Description {i + 1}", product["Description"])
-                new_quantity = st.number_input(f"Quantity {i + 1}", min_value=1, value=product["Quantity"])
-                new_unit_price = st.number_input(f"Unit Price {i + 1}", min_value=0.0, value=product["Unit Price"])
-                sub_items_text = st.text_area(f"Sub-items {i + 1} (one per line)", "\n".join(product["Sub-items"]))
-                new_sub_items = [line.strip() for line in sub_items_text.splitlines() if line.strip()]
-            with col2:
-                if st.button(f"Update Product {i + 1}"):
-                    update_product(i, new_description, new_quantity, new_unit_price, new_sub_items)
-                if st.button(f"Delete Product {i + 1}"):
-                    delete_product(i)
-            st.markdown("---")
 
 
 def filter_and_display_stock_data(combined_df):
@@ -274,27 +290,29 @@ def generate_and_download_pdf(invoice_id, company_name, logo_path, invoice_date,
 
 
 def display_stock_integration():
-    """Handles stock data upload, filtering, and adding from stock."""
+    """Handles stock data filtering, display, and adding from stock."""
     st.header("Add Product from Stock")
-    combined_df = upload_and_process_stock_data()
 
-    if combined_df is not None:  # Check if DataFrame loading was successful
-        filter_and_display_stock_data(combined_df)
+    uploaded_file = st.session_state.get('uploaded_stock_file')
 
-        if 'selected_product' not in st.session_state:
-            st.session_state.selected_product = {}
+    if uploaded_file:
+        combined_df = upload_and_process_stock_data(uploaded_file)
+        if combined_df is not None:
+            filter_and_display_stock_data(combined_df)
 
-        if 'unique_values' in st.session_state: # Check if unique values are available
-            for col in st.session_state['unique_values']:
-                if col != "description":
-                    options = [''] + list(st.session_state['unique_values'][col])
-                    st.session_state.selected_product[col] = st.selectbox(f"Select {col}:", options, key=f"product_dropdown_{col}")
+            if 'selected_product' not in st.session_state:
+                st.session_state.selected_product = {}
 
-        description = st.text_input("Description")
-        quantity = st.number_input("Quantity", value=1, min_value=1)
+            if 'unique_values' in st.session_state:
+                for col in st.session_state['unique_values']:
+                    if col != "description":
+                        options = [''] + list(st.session_state['unique_values'][col])
+                        st.session_state.selected_product[col] = st.selectbox(f"Select {col}:", options, key=f"product_dropdown_{col}")
 
-        if st.button("Add Product from Stock"):
-            if combined_df is not None: # Check if the dataframe is loaded
+            description = st.text_input("Description")
+            quantity = st.number_input("Quantity", value=1, min_value=1)
+
+            if st.button("Add Product from Stock"):
                 filtered_product = combined_df.copy()
                 for col, val in st.session_state.selected_product.items():
                     if val != '':
@@ -306,8 +324,10 @@ def display_stock_integration():
                     st.success("Product added from stock.")
                 else:
                     st.warning("No matching product found in stock.")
-            else:
-                st.error("Please upload stock data first.")
+        else: # combined_df is None
+            st.error("Error processing stock data. Please check the file format.")
+    else:
+        st.warning("Please upload stock data in the 'Products' section.")
 
 
 # --- Main Streamlit App ---

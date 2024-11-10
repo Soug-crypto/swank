@@ -1,31 +1,44 @@
 import pandas as pd
 import streamlit as st
 
-def upload_and_process_stock_data():
-    """Handles uploading stock data and calculating unique values."""
-    st.header("Add Product from Stock")
-    uploaded_file = st.file_uploader("Upload Stock Data (Excel)", type=["xlsx"])
 
-    if uploaded_file:
+def upload_and_process_stock_data(uploaded_file):
+    """Handles uploading stock data, calculating unique values, and data validation."""
+    if uploaded_file is not None:
         try:
             combined_df = pd.read_excel(uploaded_file)
 
-            # Convert relevant columns to numeric, handle potential missing columns
-            numeric_cols = ['quantity', 'price']
+            # 1. Add missing 'price' column if not present, defaulting to 0
+            if 'price' not in combined_df.columns:
+                combined_df['price'] = 0.0  # Default price to 0
+                st.warning("The 'price' column is missing. It has been added and defaulted to 0.")
+
+            # 2. Validate required columns (after adding 'price' if needed)
+            required_cols = ['description', 'price']  # Add other required columns
+            missing_cols = [col for col in required_cols if col not in combined_df.columns]
+            if missing_cols:
+                st.error(f"Missing required columns in Excel file: {', '.join(missing_cols)}")
+                return None
+
+            # 3. Convert relevant columns to numeric, handle errors
+            numeric_cols = ['quantity', 'price']  # 'price' is now always present
             for col in numeric_cols:
                 if col in combined_df.columns:
                     combined_df[col] = pd.to_numeric(combined_df[col], errors='coerce')
+                    invalid_rows = combined_df[combined_df[col].isna()]
+                    if not invalid_rows.empty:
+                        st.warning(f"Invalid numeric values found in column '{col}'. These rows will be ignored:\n{invalid_rows}")
 
-            # Calculate unique values efficiently, handle TypeError
+            # 3. Calculate unique values efficiently, handle TypeError
             if 'unique_values' not in st.session_state or st.session_state.get('unique_values_file') != uploaded_file:
                 unique_values = {}
                 for col in combined_df.columns:
-                    if col != 'description':
+                    if col != 'description':  # Or any other columns to exclude
                         unique_vals = combined_df[col].dropna().unique()
                         try:
                             unique_vals = sorted(unique_vals)
                         except TypeError:
-                            unique_vals = sorted(unique_vals, key=lambda x: (isinstance(x, str), x)) # Sort mixed types
+                            unique_vals = sorted(unique_vals, key=lambda x: (isinstance(x, str), x))
                         unique_values[col] = unique_vals
                 st.session_state['unique_values'] = unique_values
                 st.session_state['unique_values_file'] = uploaded_file
@@ -39,8 +52,7 @@ def upload_and_process_stock_data():
             st.error(f"Error loading/processing Excel: {e}")
             return None
 
-    return None
-
+    return None  # Return None if no file is uploaded
 
 def filter_dataframe(df, selected_values):
     """Filters the DataFrame based on selected values."""
