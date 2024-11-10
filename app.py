@@ -29,32 +29,6 @@ def get_client_names():
     """Returns a list of client names."""
     return list(st.session_state.clients.keys())
 
-# def add_product(description, quantity, unit_price, sub_items=None):
-#     """Adds a new product to the invoice."""
-
-#     if not description.strip():
-#         st.error("Product description is required.")
-#         return False
-#     if quantity <= 0:
-#         st.error("Quantity must be greater than zero.")
-#         return False
-#     if unit_price < 0:
-#         st.error("Unit price cannot be negative.")
-#         return False
-
-#     total = quantity * unit_price
-#     new_product = {
-#         "Description": description,
-#         "Quantity": quantity,
-#         "Unit Price": unit_price,
-#         "Total": total,
-#         "Sub-items": sub_items if sub_items else []
-#     }
-#     st.session_state.products.append(new_product)
-#     st.success("Product added.", icon="✅")
-#     return True
-
-
 
 def add_product(description, quantity, unit_price, sub_items=None):
     """Adds a new product to the invoice."""
@@ -200,43 +174,62 @@ def validate_product_selection(filtered_product):
         return False
     return True
 
+
+def load_data(uploaded_file):
+    try:
+        # Get the file extension using the name attribute
+        file_extension = uploaded_file.name.split('.')[-1]  # Get the file extension
+
+        if file_extension == 'csv':
+            df = pd.read_csv(uploaded_file)
+        elif file_extension in ['xls', 'xlsx']:
+            df = pd.read_excel(uploaded_file)
+        else:
+            st.error("Unsupported file format. Please upload a CSV or Excel file.")
+            return None
+        
+        df = df.fillna("<Missing>")  # Convert NaN to a unique placeholder
+        return df
+    except Exception as e:
+        st.error(f"Error loading file: {e}")
+        return None
+
+def apply_filters(df, filters):
+    filtered_df = df.copy()
+    for col, selected_values in filters.items():
+        if "All" not in selected_values:
+            filtered_df = filtered_df[filtered_df[col].isin(selected_values)]
+    return filtered_df
+
+
 def display_and_manage_products():
-    """Manages product display, stock integration, and manual/dropdown product entry with enhanced UI/UX."""
+    """Manages product display, stock integration, and manual product entry with enhanced UI/UX."""
     
-    # Main header with a clean, modern look
     st.title("📦 Product Management")
-    
-    # Sidebar for stock data upload, clearly separated
     st.sidebar.header("Stock Data Integration")
-    uploaded_file = st.sidebar.file_uploader("Upload Stock Data (Excel)", type=["xlsx"], help="Upload an Excel file containing stock data.")
+    uploaded_file = st.sidebar.file_uploader("Upload Stock Data (CSV or Excel)", type=["csv", "xls", "xlsx"])
     
-    # Process uploaded file
+    combined_df = None
     if uploaded_file:
         with st.spinner("Processing stock data..."):
-            st.session_state['uploaded_stock_file'] = uploaded_file
-            combined_df = upload_and_process_stock_data(uploaded_file)
-            if combined_df is not None:
-                st.session_state['unique_values'] = {col: combined_df[col].unique() for col in combined_df.columns if col in combined_df}
-            else:
-                st.error("🚫 Failed to process stock data. Please check the file format.")
-                return  # Stop execution if data processing fails
-    else:
-        combined_df = None
+            combined_df = load_data(uploaded_file)
+            if combined_df is None:
+                return  # Stop if data loading fails
 
     # Split layout for intuitive product management
     col1, col2 = st.columns([2, 1], gap="large")
-    
+
     # Left Column: Adding New Products
     with col1:
         st.subheader("🆕 Add New Product")
-        add_method = st.radio("Add Method", ["Manually", "From Stock (Dropdown)"], horizontal=True)
-        
+        add_method = st.radio("Add Method", ["Manually", "From Stock (Multi-Select)"], horizontal=True)
+
         if add_method == "Manually":
             st.text_input("Description", key="manual_desc", placeholder="Enter product description...")
-            st.number_input("Quantity", min_value=1, key="manual_qty", help="Specify the quantity.")
-            st.number_input("Unit Price ($)", min_value=0.0, key="manual_price", help="Enter the unit price.")
+            st.number_input("Quantity", min_value=1, key="manual_qty")
+            st.number_input("Unit Price ($)", min_value=0.0, key="manual_price")
             st.text_area("Sub-items (Optional)", placeholder="List sub-items, one per line", key="manual_subitems")
-            
+
             if st.button("Add Product", type="primary"):
                 description = st.session_state.manual_desc
                 quantity = st.session_state.manual_qty
@@ -244,62 +237,60 @@ def display_and_manage_products():
                 sub_items = st.session_state.manual_subitems.splitlines()
                 add_product(description, quantity, unit_price, sub_items)
                 st.success("🎉 Product added successfully!")
-        
-        elif add_method == "From Stock (Dropdown)":
+
+        elif add_method == "From Stock (Multi-Select)":
             if combined_df is None or combined_df.empty:
                 st.warning("⚠️ Please upload stock data first.")
             else:
-                # Loop through columns to allow dynamic filtering with exclusions
-                for col in st.session_state['unique_values']:
-                    selected_value = st.selectbox(
-                        f"Filter by {col.capitalize()}:",
-                        [''] + list(st.session_state['unique_values'][col]),
-                        key=f"filter_{col}"  # Automatically syncs with st.session_state
-                    )
+                # Initialize filter states
+                filters = {}
+                columns = combined_df.columns.tolist()
 
-                # No need to set `st.session_state[f"filter_{col}"]` manually.
-                # Directly use session state values.
-                selected_filters = {col: st.session_state[f"filter_{col}"] for col in st.session_state['unique_values']}
+                for col in columns:
+                    unique_values = ["All"] + sorted(combined_df[col].astype(str).unique())
+                    selected_values = st.multiselect(f"Filter by {col}", unique_values, default=["All"], key=f"filter_{col}")
+                    filters[col] = selected_values
 
-                filtered_product = update_dropdown_options(selected_filters, combined_df, current_col=None)
+                # Apply filters
+                filtered_product = apply_filters(combined_df, filters)
 
+                # Display filtered data
+                if not filtered_product.empty:
+                    st.subheader("Filtered Products")
+                    product_options = filtered_product['description'].tolist()  # Assuming 'description' is a column
+                    selected_product = st.selectbox("Select a Product", product_options)
 
+                    if selected_product:
+                        product_info = filtered_product[filtered_product['description'] == selected_product].iloc[0]
+                        st.text_input("Description", value=product_info['description'], disabled=True, key="stock_desc")
+                        st.number_input("Quantity", min_value=1, key="stock_qty")
 
-                if validate_product_selection(filtered_product):
-                    product_info = filtered_product.iloc[0]
-                    st.text_input("Description", value=product_info['description'], disabled=True, key="stock_desc")
-                    st.number_input("Quantity", min_value=1, key="stock_qty")
-                    
-                    if st.button("Add Product from Stock", type="primary"):
-                        add_product(product_info['description'], st.session_state.stock_qty, product_info.get('price', 0), product_info.get("Sub-items", []))
-                        st.success("✅ Product added from stock.")
-                
-                if st.button("Clear Filters"):
-                    for col in st.session_state['unique_values']:
-                        st.session_state[f"filter_{col}"] = ''
-                    st.experimental_rerun()  # Reset the form and filters
+                        if st.button("Add Product from Stock", type="primary"):
+                            add_product(product_info['description'], st.session_state.stock_qty, product_info.get('price', 0), product_info.get("Sub-items", []))
+                            st.success("✅ Product added from stock.")
+
+                else:
+                    st.warning("No products match the current filters.")
 
     # Right Column: Product and Invoice Summary
     with col2:
         st.subheader("📃 Invoice Summary")
         products = st.session_state.get("products", [])
         subtotal = calculate_subtotal()
-        
+
         if products:
             st.table(products)
             st.metric("Subtotal", f"${subtotal:.2f}")
         else:
             st.info("No products added yet. Start adding products.")
-    
-    return products, subtotal
 
+    return products, subtotal
 
 def display_discount_section(subtotal):
     """Section for applying discounts (percentage or amount)."""
     st.header("Discount")
     discount_type = st.radio("Discount Type", ["Percentage", "Amount"])
 
-    # Initialize discount_amount and discount_percentage
     discount_amount = 0
     discount_percentage = 0
 
