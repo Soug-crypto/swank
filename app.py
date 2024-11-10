@@ -67,28 +67,6 @@ def add_product(description, quantity, unit_price, sub_items=None):
     st.success("Product added.", icon="✅")
     return True
 
-
-def delete_product(index):
-    """Deletes a product from the invoice."""
-    if 0 <= index < len(st.session_state.products):
-        del st.session_state.products[index]
-        st.success("Product deleted.", icon="❌")
-    else:
-        st.error("Invalid product index.")
-
-def update_product(index, description, quantity, unit_price, sub_items):
-    """Updates a product in the invoice."""
-    if 0 <= index < len(st.session_state.products):
-        product = st.session_state.products[index]
-        product["Description"] = description
-        product["Quantity"] = quantity
-        product["Unit Price"] = unit_price
-        product["Total"] = quantity * unit_price
-        product["Sub-items"] = sub_items
-        st.success("Product updated.", icon="🔄")
-    else:
-        st.error("Invalid product index.")
-
 def calculate_subtotal():
     """Calculates the subtotal of products in the invoice."""
     return sum(product['Total'] for product in st.session_state.products)
@@ -120,59 +98,6 @@ def display_client_information():
             st.sidebar.write(f"Loaded client info: **{client_name}**, **{client_contact}**")
 
     return client_name, client_contact
-
-def display_and_manage_existing_products():
-    """Displays, updates, and deletes existing products in the invoice."""
-    st.header("Invoice Products")
-    
-    if st.session_state.products:
-        for i, product in enumerate(st.session_state.products):
-            st.write(f"### Product {i + 1}")
-            col1, col2 = st.columns(2)
-            with col1:
-                new_description = st.text_input(f"Description {i + 1}", product["Description"], key=f"desc_{i}")
-                new_quantity = st.number_input(f"Quantity {i + 1}", min_value=1, value=product["Quantity"], key=f"qty_{i}")
-                new_unit_price = st.number_input(f"Unit Price {i + 1}", min_value=0.0, value=product["Unit Price"], key=f"price_{i}")
-                sub_items_text = st.text_area(f"Sub-items {i + 1} (one per line)", "\n".join(product["Sub-items"]), key=f"subitems_{i}")
-                new_sub_items = [line.strip() for line in sub_items_text.splitlines() if line.strip()]
-            with col2:
-                if st.button(f"Update Product {i + 1}", key=f"update_{i}"):
-                    update_product(i, new_description, new_quantity, new_unit_price, new_sub_items)
-                if st.button(f"Delete Product {i + 1}", key=f"delete_{i}"):
-                    if st.confirm(f"Are you sure you want to delete {product['Description']}?"):
-                        delete_product(i)
-            st.markdown("---")
-    else:
-        st.write("No products added yet.")
-
-def update_dropdown_options(selected_filters, combined_df, current_col):
-    """Updates dropdown options based on selected filters, excluding the current column."""
-    filtered_df = combined_df.copy()
-    for col, val in selected_filters.items():
-        if val and col != current_col:  # Exclude the current column from filtering
-            filtered_df = filtered_df[filtered_df[col] == val]
-    return filtered_df
-
-def searchable_selectbox(label, options):
-    """Creates a searchable dropdown."""
-    search_term = st.text_input(f"Search {label}:")
-    
-    # Convert options to strings and filter based on the search term
-    filtered_options = [str(opt) for opt in options if opt is not None and str(opt) != '']
-    filtered_options = [opt for opt in filtered_options if search_term.lower() in opt.lower()]
-    
-    # Ensure the selectbox has a default option if no matches are found
-    if filtered_options:
-        return st.selectbox(label, filtered_options)
-    else:
-        return st.selectbox(label, ["No matches found"])
-
-def validate_product_selection(filtered_product):
-    """Validates if the filtered product exists."""
-    if filtered_product.empty:
-        st.warning("No matching product found. Please adjust your selections.")
-        return False
-    return True
 
 
 def load_data(uploaded_file):
@@ -291,63 +216,40 @@ def display_and_manage_products():
 
     return products, subtotal
 
-def edit_product(index):
-    """Function to edit the selected product."""
-    if 'products' not in st.session_state or index >= len(st.session_state.products):
-        st.error("❌ Product not found.")
-        return
-
-    product = st.session_state.products[index]
-
-    # Input fields for editing product details
-    new_description = st.text_input("Edit Description", value=product.get('Description', ''))
-    new_quantity = st.number_input("Edit Quantity", value=product.get('Quantity', 1), min_value=1)
-    new_price = st.number_input("Edit Unit Price ($)", value=product.get('Unit Price', 0.0), min_value=0.0)
-
-    # Edit Sub-items
-    sub_items = product.get('Sub-items', [])
-    new_sub_items = []
-    for i, sub_item in enumerate(sub_items):
-        new_sub_item = st.text_input(f"Edit Sub-item {i + 1}", value=sub_item)
-        new_sub_items.append(new_sub_item)
-
-    # Button to add a new sub-item
-    if st.button("Add Sub-item"):
-        new_sub_items.append("")  # Add an empty field for the new sub-item
-
-    # Place the Update button here
-    if st.button("Update Product"):
-        # Update the product in the session state
-        st.session_state.products[index] = {
-            'Description': new_description,
-            'Quantity': new_quantity,
-            'Unit Price': new_price,  # Allow zero price
-            'Total': new_quantity * new_price,  # Recalculate total
-            'Sub-items': new_sub_items  # Update with new sub-items
-        }
-        st.success("✅ Product updated successfully!")
-
 def delete_product(index):
-    """Function to delete the selected product."""
-    del st.session_state.products[index]
-    st.success("✅ Product deleted successfully!")
+    """Deletes a product from the invoice."""
+    if 0 <= index < len(st.session_state.products):
+        del st.session_state.products[index]
+        st.success("Product deleted.", icon="❌")
+    else:
+        st.error("Invalid product index.")
 
 def edit_product(index):
     """Function to edit the selected product."""
+    # Check if products exist in session state
     if 'products' not in st.session_state or index >= len(st.session_state.products):
         st.error("❌ Product not found.")
         return
 
     product = st.session_state.products[index]
-    st.write("Editing product data:", product)  # Debugging output
+    st.write("Editing product data:", product)  # Display current product data for debugging
 
     # Ensure the unit price is a float
-    unit_price = float(product.get('Unit Price', 0.0))
-    
+    try:
+        unit_price = float(product.get('Unit Price', 0.0))
+    except (ValueError, TypeError):
+        st.error("❌ Invalid unit price. Please check the product data.")
+        return
+
     # Input fields for editing product details
     new_description = st.text_input("Edit Description", value=product.get('Description', ''))
     new_quantity = st.number_input("Edit Quantity", value=product.get('Quantity', 1), min_value=1)
-    new_price = st.number_input("Edit Unit Price ($)", value=unit_price, min_value=0.0)
+    
+    try:
+        new_price = float(st.number_input("Edit Unit Price ($)", value=unit_price, min_value=0.0))
+    except (ValueError, TypeError):
+        st.error("❌ Invalid price. Please enter a valid number.")
+        return
 
     # Edit Sub-items
     sub_items = product.get('Sub-items', [])
@@ -356,12 +258,24 @@ def edit_product(index):
         new_sub_item = st.text_input(f"Edit Sub-item {i + 1}", value=sub_item)
         new_sub_items.append(new_sub_item)
 
+    # Flag to track if a change was made
+    changes_made = False
+
     # Button to add a new sub-item
     if st.button("Add Sub-item"):
-        new_sub_items.append("")  # Add an empty field for the new sub-item
+        new_sub_items.append("")  # Add an empty field for a new sub-item
+        changes_made = True  # Set flag indicating a change has occurred
 
-    # Update button
+    # Update button with validation
     if st.button("Update Product"):
+        # Validation checks
+        if not new_description.strip():
+            st.error("❌ Description cannot be empty.")
+            return
+        if new_quantity <= 0:
+            st.error("❌ Quantity must be a positive integer.")
+            return
+
         # Update the product in the session state
         st.session_state.products[index] = {
             'Description': new_description,
@@ -371,6 +285,8 @@ def edit_product(index):
             'Sub-items': new_sub_items  # Update with new sub-items
         }
         st.success("✅ Product updated successfully!")
+
+
 
 def generate_and_download_pdf(invoice_id, company_name, logo_path, invoice_date, due_date, client_name, client_contact, products, subtotal, discount_amount, total):
     """Generates and provides a download link for the PDF invoice."""
