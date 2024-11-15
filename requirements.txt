@@ -4,3 +4,4 @@ fpdf2
 openpyxl 
 python-bidi
 arabic-reshaper
+pyzbar
