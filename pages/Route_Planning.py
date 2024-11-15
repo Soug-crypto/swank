@@ -116,9 +116,6 @@ def solve_tsp(locations):
 
     search_parameters.first_solution_strategy = 1  # PATH_CHEAPEST_ARC
 
-
-
-
     solution = routing.SolveWithParameters(search_parameters)
 
     if solution:
@@ -168,7 +165,7 @@ if st.button("Optimize Routes"):
 
 # Footer Notes
 st.markdown("---")
-st.write("### Notes:")
-st.write("1. Ensure customer availability during preferred delivery time.")
-st.write("2. Use traffic data for real-time adjustments.")
+# st.write("### Notes:")
+# st.write("1. Ensure customer availability during preferred delivery time.")
+# st.write("2. Use traffic data for real-time adjustments.")
 
