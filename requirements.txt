@@ -5,3 +5,6 @@ openpyxl
 python-bidi
 arabic-reshaper
 pyzbar
+folium
+streamlit_folium
+ortools
