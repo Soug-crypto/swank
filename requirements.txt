@@ -8,3 +8,4 @@ pyzbar
 folium
 streamlit_folium
 ortools
+streamlit_authenticator
