@@ -4,8 +4,11 @@ fpdf2
 openpyxl 
 python-bidi
 arabic-reshaper
-pyzbar
+zxing
 folium
 streamlit_folium
 ortools
 streamlit_authenticator
+plotly
+qrcode
+tqdm
